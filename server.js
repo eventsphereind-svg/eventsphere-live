@@ -42,7 +42,8 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'ngrok-skip-browser-warning']
 }));
 
-const PORT = 3002;
+// 🔥 SIRF YE LINE CHANGE HUI HAI CLOUD PORT KE LIYE 🔥
+const PORT = process.env.PORT || 3002;
 
 // --- DATABASE ---
 const db = new sqlite3.Database('./eventsphere_records.db', (err) => {
