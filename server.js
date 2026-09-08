@@ -1,5 +1,6 @@
 const express = require('express');
 const nodemailer = require('nodemailer');
+const puppeteer = require('puppeteer');
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const sqlite3 = require('sqlite3').verbose();
@@ -85,10 +86,11 @@ try {
     execSync('taskkill /F /IM chrome.exe /FI "STATUS eq RUNNING"', { stdio: 'ignore' });
 } catch (err) {}
 
-// 🚀 WHATSAPP CLIENT SETUP (TIMEOUT FIX) 🚀
+// 🚀 WHATSAPP CLIENT SETUP (CHROME FIX KE SATH) 🚀
 const waClient = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
     puppeteer: {
+        executablePath: puppeteer.executablePath(), 
         headless: true, 
         timeout: 60000, 
         protocolTimeout: 120000, 
