@@ -89,7 +89,6 @@ try {
 const waClient = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
     puppeteer: {
-        executablePath: exactBrowserPath,
         headless: true, 
         timeout: 60000, 
         protocolTimeout: 120000, 
