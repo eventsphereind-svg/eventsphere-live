@@ -105,7 +105,10 @@ const waClient = new Client({
             '--disable-gpu',
             '--disable-web-security', 
             '--js-flags="--max-old-space-size=1024"' 
+            '--disable-software-rasterizer',
+            '--disable-features=site-per-process'
         ]
+    
     },
     webVersionCache: {
         type: 'none' 
