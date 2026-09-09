@@ -8,7 +8,6 @@ const path = require('path');
 const cors = require('cors'); 
 const Razorpay = require('razorpay');
 const fs = require('fs'); 
-const { execSync } = require('child_process');
 
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcodeTerminal = require('qrcode-terminal');
@@ -43,16 +42,16 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'ngrok-skip-browser-warning']
 }));
 
-// 🔥 SIRF YE LINE CHANGE HUI HAI CLOUD PORT KE LIYE 🔥
+// 🔥 PORT BINDING FOR CLOUD 🔥
 const PORT = process.env.PORT || 3002;
 
-// --- DATABASE ---
+// --- DATABASE SETUP ---
 const db = new sqlite3.Database('./eventsphere_records.db', (err) => {
     if (err) console.error("Database error:", err.message);
     else console.log('✅ Database Ready! 📒');
 });
 
-// 🔥 SAFE SCHEMA UPGRADE (WITH RESTAURANT MODULE) 🔥
+// 🔥 SAFE SCHEMA UPGRADE 🔥
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS tickets (payment_id TEXT PRIMARY KEY, phone TEXT, email TEXT, event_name TEXT, amount TEXT, status TEXT)`);
     db.run(`ALTER TABLE tickets ADD COLUMN category TEXT DEFAULT 'GENERAL'`, () => {});
@@ -71,41 +70,24 @@ const transporter = nodemailer.createTransport({
     auth: { user: 'eventsphereind@gmail.com', pass: 'slcrxmobqeorwxrz' }
 });
 
-// ================= WHATSAPP SETUP =================
-const possiblePaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Users\\HP\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe' 
-];
-
-let exactBrowserPath = possiblePaths.find(p => fs.existsSync(p));
-
-try {
-    execSync('taskkill /F /IM chrome.exe /FI "STATUS eq RUNNING"', { stdio: 'ignore' });
-} catch (err) {}
-
-// 🚀 WHATSAPP CLIENT SETUP (CHROME FIX KE SATH) 🚀
+// 🚀 WHATSAPP CLIENT SETUP (ULTRA LITE FOR CLOUD RAM) 🚀
 const waClient = new Client({
-    authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+    // authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // Temporary comment to force Fresh QR
     puppeteer: {
         executablePath: puppeteer.executablePath(), 
         headless: true, 
-        timeout: 60000, 
-        protocolTimeout: 120000, 
+        timeout: 120000, 
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu',
-            '--disable-web-security', 
-            '--js-flags="--max-old-space-size=1024"', 
+            '--single-process', // RAM bachane ke liye
             '--disable-software-rasterizer',
-            '--disable-features=site-per-process'
+            '--mute-audio'
         ]
     },
     webVersionCache: {
@@ -310,7 +292,6 @@ app.post('/razorpay-webhook', async (req, res) => {
         const mapQuery = encodeURIComponent(eventName + " Gujarat");
         const mapLink = `https://maps.google.com/?q=${mapQuery}`;
 
-        // 🔥 MAGIC DIRECT LINK (DIRECT QR OPENS) 🔥
         let directLink = `https://www.eventsphere.site/?id=${paymentId}&e=${encodeURIComponent(eventName)}&q=${totalGuests}&d=${encodeURIComponent(eventDate)}&t=${encodeURIComponent(eventTime)}`;
 
         let captionText = "";
@@ -406,7 +387,6 @@ app.post('/free-ticket', async (req, res) => {
         const mapQuery = encodeURIComponent(eventName + " Gujarat");
         const mapLink = `https://maps.google.com/?q=${mapQuery}`;
 
-        // 🔥 MAGIC DIRECT LINK (DIRECT QR OPENS) 🔥
         let directLink = `https://www.eventsphere.site/?id=${paymentId}&e=${encodeURIComponent(eventName)}&q=${totalGuests}&d=${encodeURIComponent(eventDate)}&t=${encodeURIComponent(eventTime)}`;
 
         let captionText = "";
