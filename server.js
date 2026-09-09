@@ -92,7 +92,6 @@ const waClient = new Client({
     puppeteer: {
         executablePath: puppeteer.executablePath(), 
         headless: true, 
-        dumpio: true,
         timeout: 60000, 
         protocolTimeout: 120000, 
         args: [
@@ -104,11 +103,10 @@ const waClient = new Client({
             '--no-zygote',
             '--disable-gpu',
             '--disable-web-security', 
-            '--js-flags="--max-old-space-size=1024"' 
+            '--js-flags="--max-old-space-size=1024"', 
             '--disable-software-rasterizer',
             '--disable-features=site-per-process'
         ]
-    
     },
     webVersionCache: {
         type: 'none' 
