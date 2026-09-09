@@ -92,6 +92,7 @@ const waClient = new Client({
     puppeteer: {
         executablePath: puppeteer.executablePath(), 
         headless: true, 
+        dumpio: true,
         timeout: 60000, 
         protocolTimeout: 120000, 
         args: [
