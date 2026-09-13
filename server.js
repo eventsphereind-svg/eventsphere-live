@@ -10,7 +10,6 @@ const Razorpay = require('razorpay');
 const fs = require('fs'); 
 
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcodeTerminal = require('qrcode-terminal');
 
 // ================= 🛡️ BULLETPROOF CRASH HANDLER 🛡️ =================
 process.on('uncaughtException', (err) => {
@@ -72,7 +71,7 @@ const transporter = nodemailer.createTransport({
 
 // 🚀 WHATSAPP CLIENT SETUP (ULTRA LITE FOR CLOUD RAM) 🚀
 const waClient = new Client({
-    // authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), // Temporary comment to force Fresh QR
+    // authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }), 
     puppeteer: {
         executablePath: puppeteer.executablePath(), 
         headless: true, 
@@ -95,9 +94,13 @@ const waClient = new Client({
     }
 });
 
+// 🔥 SMART LINK QR SYSTEM 🔥
 waClient.on('qr', (qr) => {
-    qrcodeTerminal.generate(qr, {small: true});
-    console.log("👆 Apne WhatsApp (Linked Devices) se ye QR scan karo bhai!");
+    console.log("\n=======================================================");
+    console.log("👇 IS LINK KO COPY KARKE NAYE BROWSER TAB MEIN KHOL 👇");
+    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(qr)}`);
+    console.log("👆 QR YAHAN MILEGA (1 minute ke andar scan karna) 👆");
+    console.log("=======================================================\n");
 });
 
 waClient.on('ready', () => {
