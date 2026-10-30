@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const Razorpay = require('razorpay');
+const puppeteer = require('puppeteer');
+const qrcode = require('qrcode');
 
 const app = express();
 
@@ -15,6 +17,94 @@ app.use(express.json());
 // ================= DATABASES =================
 const otpStore = {};     
 const ticketsDB = [];    
+
+let browserInstance = null;
+let pageInstance = null;
+let latestQrString = '';
+let whatsappStatus = 'DISCONNECTED';
+
+// ================= PUPPETEER WHATSAPP BOT SETUP =================
+async function startPuppeteerWhatsApp() {
+    try {
+        console.log('🤖 Starting Puppeteer Headless Browser for WhatsApp...');
+        browserInstance = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu'
+            ]
+        });
+
+        pageInstance = await browserInstance.newPage();
+        await pageInstance.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        
+        console.log('🌐 Navigating to WhatsApp Web...');
+        await pageInstance.goto('https://web.whatsapp.com', { waitUntil: 'networkidle2', timeout: 60000 });
+
+        whatsappStatus = 'WAITING_FOR_QR';
+
+        // Automatically extract QR code from WhatsApp Web DOM
+        setInterval(async () => {
+            try {
+                if (!pageInstance) return;
+                const qrData = await pageInstance.evaluate(() => {
+                    const canvas = document.querySelector('canvas');
+                    if (canvas) return canvas.toDataURL();
+                    const qrContainer = document.querySelector('div[data-ref]');
+                    if (qrContainer) return qrContainer.getAttribute('data-ref');
+                    return null;
+                });
+
+                if (qrData) {
+                    latestQrString = qrData;
+                    whatsappStatus = 'QR_READY';
+                }
+            } catch (e) {
+                // DOM element might not be ready yet
+            }
+        }, 3000);
+
+    } catch (err) {
+        console.error('❌ Puppeteer WhatsApp Error:', err);
+        whatsappStatus = 'ERROR';
+    }
+}
+
+// ================= BROWSER QR ENDPOINT =================
+app.get('/qr', async (req, res) => {
+    if (whatsappStatus === 'CONNECTED') {
+        return res.send('<h2 style="color:green; text-align:center; margin-top:50px;">✅ WhatsApp is Connected via Puppeteer!</h2>');
+    }
+    if (!latestQrString) {
+        return res.send('<h2 style="text-align:center; margin-top:50px;">⏳ Puppeteer is launching WhatsApp Web, please refresh in 10 seconds...</h2>');
+    }
+
+    try {
+        let qrImageHtml = '';
+        if (latestQrString.startsWith('data:image')) {
+            qrImageHtml = `<img src="${latestQrString}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />`;
+        } else {
+            qrImageHtml = await qrcode.toDataURL(latestQrString);
+            qrImageHtml = `<img src="${qrImageHtml}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />`;
+        }
+
+        res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h2>Scan WhatsApp QR Code via Puppeteer</h2>
+                ${qrImageHtml}
+                <p>Status: <b>${whatsappStatus}</b></p>
+                <p>Refresh this page if the QR code changes.</p>
+            </div>
+        `);
+    } catch (err) {
+        res.status(500).send('Error rendering QR code image');
+    }
+});
 
 // ================= 1. SEND OTP API =================
 app.post('/send-otp', async (req, res) => {
@@ -79,7 +169,6 @@ app.post('/create-order', async (req, res) => {
         const order = await razorpayInstance.orders.create(options);
         return res.json({ success: true, order });
     } catch (error) {
-        console.error("Razorpay Error:", error);
         return res.json({ success: true, order: { id: `order_${Date.now()}`, amount: req.body.amount * 100, currency: "INR" } }); 
     }
 });
@@ -124,8 +213,10 @@ app.get('/my-transactions/:phone', (req, res) => {
     }
 });
 
-// ================= SERVER START =================
+// ================= SERVER START & PUPPETEER INIT =================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(`EventSphere Bulletproof Engine Port ${PORT} par daud raha hai! 🚀`);
+    console.log(`EventSphere Puppeteer Engine Port ${PORT} par daud raha hai! 🚀`);
+    // Start Puppeteer in background after port binding to avoid Render timeout
+    setTimeout(startPuppeteerWhatsApp, 2000);
 });
