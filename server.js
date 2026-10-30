@@ -39,7 +39,6 @@ app.post('/send-otp', async (req, res) => {
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         otpStore[phone] = { otp, expires: Date.now() + 300000 }; // 5 mins
 
-        // Generate direct WhatsApp chat URL for instant messaging
         let formattedPhone = phone.replace(/\D/g, '');
         if (!formattedPhone.startsWith('91')) formattedPhone = '91' + formattedPhone;
         const whatsappMessage = encodeURIComponent(`Hello ${name}, your EventSphere login OTP is *${otp}*. Valid for 5 minutes.`);
@@ -109,7 +108,6 @@ app.post('/verify-payment', async (req, res) => {
         const { payment_id, event_name, category, customer_phone, date, time, amount } = req.body;
         const passId = 'ES-' + Math.floor(100000 + Math.random() * 900000);
 
-        // Generate QR code data URL for the ticket pass ID
         const qrCodeDataUrl = await qrcode.toDataURL(`EventSphere Pass: ${passId} | Event: ${event_name || 'Event'} | Phone: ${customer_phone}`);
 
         const newTicket = {
