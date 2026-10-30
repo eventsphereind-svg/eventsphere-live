@@ -1,9 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const Razorpay = require('razorpay');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-const qrcode = require('qrcode');
-const pino = require('pino');
 
 const app = express();
 
@@ -15,94 +12,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ================= DATABASES & SESSIONS =================
+// ================= DATABASES =================
 const otpStore = {};     
 const ticketsDB = [];    
-
-let sock = null;
-let qrCodeData = '';
-let connectionStatus = 'DISCONNECTED';
-
-// ================= FREE WHATSAPP CONNECTION (QR CODE) =================
-async function connectToWhatsApp() {
-    try {
-        const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-        
-        sock = makeWASocket({
-            auth: state,
-            printQRInTerminal: true,
-            logger: pino({ level: 'silent' })
-        });
-
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr } = update;
-            if (qr) {
-                qrCodeData = qr;
-                connectionStatus = 'QR_READY';
-                console.log('📱 WhatsApp QR Code generated! Open /qr on your server URL to scan.');
-            }
-            if (connection === 'close') {
-                const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-                console.log('connection closed, reconnecting...', shouldReconnect);
-                connectionStatus = 'DISCONNECTED';
-                if (shouldReconnect) {
-                    setTimeout(connectToWhatsApp, 3000);
-                }
-            } else if (connection === 'open') {
-                connectionStatus = 'CONNECTED';
-                console.log('✅ WhatsApp connected successfully via QR!');
-            }
-        });
-
-        sock.ev.on('creds.update', saveCreds);
-    } catch (err) {
-        console.error("WhatsApp Connection Error:", err);
-    }
-}
-
-// ================= BROWSER QR ENDPOINT =================
-app.get('/qr', async (req, res) => {
-    if (connectionStatus === 'CONNECTED') {
-        return res.send('<h2 style="color:green; text-align:center; margin-top:50px;">✅ WhatsApp is already Connected and Running!</h2>');
-    }
-    if (!qrCodeData) {
-        return res.send('<h2 style="text-align:center; margin-top:50px;">⏳ Generating QR Code, please refresh this page in 5 seconds...</h2>');
-    }
-    try {
-        const qrImageHtml = await qrcode.toDataURL(qrCodeData);
-        res.send(`
-            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
-                <h2>Scan WhatsApp QR Code to Connect</h2>
-                <img src="${qrImageHtml}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />
-                <p>Status: <b>${connectionStatus}</b></p>
-                <p>Refresh this page if the QR code expires.</p>
-            </div>
-        `);
-    } catch (err) {
-        res.status(500).send('Error generating QR code image');
-    }
-});
-
-// Helper function to send WhatsApp message via connected socket
-async function sendWhatsAppMessage(phone, message) {
-    try {
-        if (!sock || connectionStatus !== 'CONNECTED') {
-            console.log('❌ WhatsApp socket not connected yet!');
-            return false;
-        }
-        let formattedPhone = phone.replace(/\D/g, '');
-        if (!formattedPhone.startsWith('91')) {
-            formattedPhone = '91' + formattedPhone;
-        }
-        const jid = `${formattedPhone}@s.whatsapp.net`;
-        await sock.sendMessage(jid, { text: message });
-        console.log(`✅ WhatsApp message sent to ${formattedPhone}`);
-        return true;
-    } catch (err) {
-        console.error('❌ Failed to send WhatsApp message:', err);
-        return false;
-    }
-}
 
 // ================= 1. SEND OTP API =================
 app.post('/send-otp', async (req, res) => {
@@ -116,15 +28,12 @@ app.post('/send-otp', async (req, res) => {
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         otpStore[phone] = { otp, expires: Date.now() + 300000 }; // 5 mins
 
-        const msg = `Hello ${name}, your EventSphere login OTP is *${otp}*. Valid for 5 minutes.`;
-        const sent = await sendWhatsAppMessage(phone, msg);
-
-        if(sent) {
-            return res.json({ success: true, message: "OTP successfully sent to your WhatsApp! 📱" });
-        } else {
-            console.log(`⚠️ Fallback OTP (WhatsApp not connected yet): ${otp}`);
-            return res.json({ success: true, message: "OTP generated (Scan QR at /qr first)", debug_otp: otp });
-        }
+        console.log(`🔐 OTP Generated for ${phone} (${name}): ${otp}`);
+        return res.json({ 
+            success: true, 
+            message: "OTP generated successfully!", 
+            debug_otp: otp 
+        });
 
     } catch (error) {
         console.error("OTP Error:", error);
@@ -170,11 +79,12 @@ app.post('/create-order', async (req, res) => {
         const order = await razorpayInstance.orders.create(options);
         return res.json({ success: true, order });
     } catch (error) {
+        console.error("Razorpay Error:", error);
         return res.json({ success: true, order: { id: `order_${Date.now()}`, amount: req.body.amount * 100, currency: "INR" } }); 
     }
 });
 
-// ================= 4. VERIFY PAYMENT & SEND TICKET =================
+// ================= 4. VERIFY PAYMENT & SAVE TICKET =================
 app.post('/verify-payment', async (req, res) => {
     try {
         const { payment_id, event_name, category, customer_phone, date, time, amount } = req.body;
@@ -194,10 +104,7 @@ app.post('/verify-payment', async (req, res) => {
         };
 
         ticketsDB.push(newTicket);
-
-        // Send Ticket confirmation on WhatsApp
-        const ticketMsg = `🎉 *Booking Confirmed! - EventSphere*\n\n*Event:* ${newTicket.event_name}\n*Pass ID:* ${passId}\n*Category:* ${category}\n*Date:* ${date} | ${time}\n*Amount Paid:* ₹${amount}\n\nShow this Pass ID at the venue entry. Thank you!`;
-        await sendWhatsAppMessage(customer_phone, ticketMsg);
+        console.log("🎟️ Ticket Booked & Saved:", passId);
         
         return res.json({ success: true, passId, ticket: newTicket });
     } catch (error) {
@@ -217,10 +124,8 @@ app.get('/my-transactions/:phone', (req, res) => {
     }
 });
 
-// ================= SERVER START & WHATSAPP INIT =================
+// ================= SERVER START =================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(`EventSphere Master Engine Port ${PORT} par daud raha hai! 🚀`);
-    // Start WhatsApp connection AFTER server binds to port to prevent timeout
-    setTimeout(connectToWhatsApp, 1000);
+    console.log(`EventSphere Bulletproof Engine Port ${PORT} par daud raha hai! 🚀`);
 });
