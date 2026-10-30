@@ -1,7 +1,7 @@
 {
   "name": "eventsphere-backend",
   "version": "1.0.0",
-  "description": "EventSphere Direct WhatsApp & Razorpay Backend",
+  "description": "EventSphere Puppeteer WhatsApp Engine",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -9,6 +9,8 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "puppeteer": "^22.0.0",
+    "qrcode": "^1.5.3",
     "razorpay": "^2.9.4"
   }
 }
