@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const Razorpay = require('razorpay');
+const puppeteer = require('puppeteer');
+const qrcode = require('qrcode');
 
 const app = express();
 
@@ -16,6 +18,91 @@ app.use(express.json());
 const otpStore = {};     
 const ticketsDB = [];    
 
+let browserInstance = null;
+let pageInstance = null;
+let latestQrString = '';
+let whatsappStatus = 'DISCONNECTED';
+
+// ================= PUPPETEER WHATSAPP BOT SETUP =================
+async function startPuppeteerWhatsApp() {
+    try {
+        console.log('🤖 Starting Puppeteer Headless Browser for WhatsApp...');
+        browserInstance = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu'
+            ]
+        });
+
+        pageInstance = await browserInstance.newPage();
+        await pageInstance.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        
+        console.log('🌐 Navigating to WhatsApp Web...');
+        await pageInstance.goto('https://web.whatsapp.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        whatsappStatus = 'WAITING_FOR_QR';
+        console.log('⏳ Waiting for official WhatsApp QR pairing element...');
+
+        setInterval(async () => {
+            try {
+                if (!pageInstance) return;
+
+                const qrRefData = await pageInstance.evaluate(() => {
+                    const qrContainer = document.querySelector('div[data-ref]');
+                    if (qrContainer) {
+                        return qrContainer.getAttribute('data-ref');
+                    }
+                    return null;
+                });
+
+                if (qrRefData && qrRefData !== latestQrString) {
+                    latestQrString = qrRefData;
+                    whatsappStatus = 'QR_READY';
+                    console.log('📱 REAL WhatsApp QR Pairing Token successfully captured!');
+                }
+            } catch (e) {
+                // Ignore transient errors
+            }
+        }, 3000);
+
+    } catch (err) {
+        console.error('❌ Puppeteer WhatsApp Error:', err);
+        whatsappStatus = 'ERROR';
+    }
+}
+
+// ================= BROWSER QR ENDPOINT =================
+app.get('/qr', async (req, res) => {
+    if (whatsappStatus === 'CONNECTED') {
+        return res.send('<h2 style="color:green; text-align:center; margin-top:50px;">✅ WhatsApp is Connected via Puppeteer!</h2>');
+    }
+    if (!latestQrString) {
+        return res.send('<h2 style="text-align:center; margin-top:50px;">⏳ WhatsApp Web is loading the login QR code, please refresh this page in 10-15 seconds...</h2>');
+    }
+
+    try {
+        const generatedDataUrl = await qrcode.toDataURL(latestQrString);
+        const qrImageHtml = `<img src="${generatedDataUrl}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />`;
+
+        res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h2>Scan WhatsApp QR Code to Connect</h2>
+                ${qrImageHtml}
+                <p>Status: <b>${whatsappStatus}</b></p>
+                <p>Refresh this page if the QR code expires.</p>
+            </div>
+        `);
+    } catch (err) {
+        res.status(500).send('Error rendering QR code image');
+    }
+});
+
 // ================= 1. SEND OTP API =================
 app.post('/send-otp', async (req, res) => {
     try {
@@ -28,19 +115,11 @@ app.post('/send-otp', async (req, res) => {
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         otpStore[phone] = { otp, expires: Date.now() + 300000 }; // 5 mins
 
-        // Generate direct WhatsApp click-to-chat URL
-        let cleanPhone = phone.replace(/\D/g, '');
-        if (!cleanPhone.startsWith('91')) cleanPhone = '91' + cleanPhone;
-        
-        const message = encodeURIComponent(`Hello ${name}, your EventSphere login OTP is *${otp}*. Valid for 5 minutes.`);
-        const whatsappUrl = `https://wa.me/${cleanPhone}?text=${message}`;
-
         console.log(`🔐 OTP Generated for ${phone} (${name}): ${otp}`);
         return res.json({ 
             success: true, 
             message: "OTP generated successfully!", 
-            debug_otp: otp,
-            whatsapp_url: whatsappUrl
+            debug_otp: otp 
         });
 
     } catch (error) {
@@ -95,4 +174,45 @@ app.post('/create-order', async (req, res) => {
 app.post('/verify-payment', async (req, res) => {
     try {
         const { payment_id, event_name, category, customer_phone, date, time, amount } = req.body;
-        const passId = 'ES-' + Math.floor(100000 + Math.random() * 9
+        const passId = 'ES-' + Math.floor(100000 + Math.random() * 900000);
+
+        const newTicket = {
+            passId: passId,
+            payment_id: payment_id || `pay_${Date.now()}`,
+            amount: `₹${amount}`,
+            event_name: event_name || 'Premium Event',
+            category: category || 'Entry Pass',
+            customer_phone: customer_phone,
+            date: date || 'TBD',
+            time: time || 'TBD',
+            status: 'CONFIRMED',
+            bookedOn: new Date().toLocaleDateString()
+        };
+
+        ticketsDB.push(newTicket);
+        console.log("🎟️ Ticket Booked & Saved:", passId);
+        
+        return res.json({ success: true, passId, ticket: newTicket });
+    } catch (error) {
+        console.error("Payment Verification Error:", error);
+        return res.status(500).json({ success: false, message: "Failed to save ticket" });
+    }
+});
+
+// ================= 5. GET MY TICKETS =================
+app.get('/my-transactions/:phone', (req, res) => {
+    try {
+        const phone = decodeURIComponent(req.params.phone);
+        const userTickets = ticketsDB.filter(t => t.customer_phone === phone);
+        return res.json({ success: true, tickets: userTickets });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: "Failed to fetch tickets" });
+    }
+});
+
+// ================= SERVER START & PUPPETEER INIT =================
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log(`EventSphere Puppeteer Engine Port ${PORT} par daud raha hai! 🚀`);
+    setTimeout(startPuppeteerWhatsApp, 3000);
+});
