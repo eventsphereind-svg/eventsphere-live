@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const Razorpay = require('razorpay');
-const axios = require('axios');
 
 const app = express();
 
@@ -17,21 +16,6 @@ app.use(express.json());
 const otpStore = {};     
 const ticketsDB = [];    
 
-// ================= WHATSAPP NOTIFICATION HELPER =================
-async function sendWhatsAppNotification(phone, message) {
-    try {
-        let formattedPhone = phone.replace(/\D/g, '');
-        if (!formattedPhone.startsWith('91')) {
-            formattedPhone = '91' + formattedPhone;
-        }
-        console.log(`📱 WhatsApp Message Triggered for ${formattedPhone}:`, message);
-        return true;
-    } catch (err) {
-        console.error('❌ WhatsApp Notification Error:', err);
-        return false;
-    }
-}
-
 // ================= 1. SEND OTP API =================
 app.post('/send-otp', async (req, res) => {
     try {
@@ -43,9 +27,6 @@ app.post('/send-otp', async (req, res) => {
 
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         otpStore[phone] = { otp, expires: Date.now() + 300000 }; // 5 mins
-
-        const msg = `Hello ${name}, your EventSphere login OTP is *${otp}*. Valid for 5 minutes.`;
-        await sendWhatsAppNotification(phone, msg);
 
         console.log(`🔐 OTP Generated for ${phone}: ${otp}`);
         return res.json({ success: true, message: "OTP successfully generated!", debug_otp: otp });
@@ -98,7 +79,7 @@ app.post('/create-order', async (req, res) => {
     }
 });
 
-// ================= 4. VERIFY PAYMENT & SEND TICKET =================
+// ================= 4. VERIFY PAYMENT & SAVE TICKET =================
 app.post('/verify-payment', async (req, res) => {
     try {
         const { payment_id, event_name, category, customer_phone, date, time, amount } = req.body;
@@ -118,10 +99,7 @@ app.post('/verify-payment', async (req, res) => {
         };
 
         ticketsDB.push(newTicket);
-
-        // Send Ticket confirmation message
-        const ticketMsg = `🎉 *Booking Confirmed! - EventSphere*\n\n*Event:* ${newTicket.event_name}\n*Pass ID:* ${passId}\n*Category:* ${category}\n*Date:* ${date} | ${time}\n*Amount Paid:* ₹${amount}\n\nShow this Pass ID at the venue entry. Thank you!`;
-        await sendWhatsAppNotification(customer_phone, ticketMsg);
+        console.log("🎟️ Ticket Booked & Saved:", passId);
         
         return res.json({ success: true, passId, ticket: newTicket });
     } catch (error) {
