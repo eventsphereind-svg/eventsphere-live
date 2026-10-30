@@ -47,39 +47,29 @@ async function startPuppeteerWhatsApp() {
         await pageInstance.goto('https://web.whatsapp.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         whatsappStatus = 'WAITING_FOR_QR';
-        console.log('⏳ Waiting for WhatsApp QR canvas to load...');
+        console.log('⏳ Waiting for official WhatsApp QR pairing element...');
 
-        // Check for QR Code every 3 seconds with improved DOM selectors
+        // Check strictly for the official data-ref QR container
         const qrInterval = setInterval(async () => {
             try {
                 if (!pageInstance) return;
 
-                const qrData = await pageInstance.evaluate(() => {
-                    // Try canvas first
-                    const canvas = document.querySelector('canvas');
-                    if (canvas) return canvas.toDataURL();
-
-                    // Try data-ref attribute container
+                const qrRefData = await pageInstance.evaluate(() => {
+                    // Strictly target WhatsApp Web's official QR data-ref attribute container
                     const qrContainer = document.querySelector('div[data-ref]');
-                    if (qrContainer) return qrContainer.getAttribute('data-ref');
-
-                    // Try aria-label or specific wrapper
-                    const ariaCanvas = document.querySelector('div[aria-label="Scan this QR code!"]');
-                    if (ariaCanvas) {
-                        const innerCanvas = ariaCanvas.querySelector('canvas');
-                        if (innerCanvas) return innerCanvas.toDataURL();
+                    if (qrContainer) {
+                        return qrContainer.getAttribute('data-ref');
                     }
-
                     return null;
                 });
 
-                if (qrData) {
-                    latestQrString = qrData;
+                if (qrRefData && qrRefData !== latestQrString) {
+                    latestQrString = qrRefData;
                     whatsappStatus = 'QR_READY';
-                    console.log('📱 WhatsApp QR Code successfully captured!');
+                    console.log('📱 REAL WhatsApp QR Pairing Token successfully captured!');
                 }
             } catch (e) {
-                // Ignore transient errors while page loads
+                // Ignore transient loading errors
             }
         }, 3000);
 
@@ -95,21 +85,17 @@ app.get('/qr', async (req, res) => {
         return res.send('<h2 style="color:green; text-align:center; margin-top:50px;">✅ WhatsApp is Connected via Puppeteer!</h2>');
     }
     if (!latestQrString) {
-        return res.send('<h2 style="text-align:center; margin-top:50px;">⏳ Puppeteer is loading WhatsApp Web, please refresh this page in 10 seconds...</h2>');
+        return res.send('<h2 style="text-align:center; margin-top:50px;">⏳ WhatsApp Web is loading the login QR code, please refresh this page in 10-15 seconds...</h2>');
     }
 
     try {
-        let qrImageHtml = '';
-        if (latestQrString.startsWith('data:image')) {
-            qrImageHtml = `<img src="${latestQrString}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />`;
-        } else {
-            const generatedDataUrl = await qrcode.toDataURL(latestQrString);
-            qrImageHtml = `<img src="${generatedDataUrl}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />`;
-        }
+        // Generate clean QR code image from the captured pairing token string
+        const generatedDataUrl = await qrcode.toDataURL(latestQrString);
+        const qrImageHtml = `<img src="${generatedDataUrl}" alt="WhatsApp QR" style="width:300px; height:300px; border:4px solid #D4AF37; border-radius:12px;" />`;
 
         res.send(`
             <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
-                <h2>Scan WhatsApp QR Code via Puppeteer</h2>
+                <h2>Scan WhatsApp QR Code to Connect</h2>
                 ${qrImageHtml}
                 <p>Status: <b>${whatsappStatus}</b></p>
                 <p>Refresh this page if the QR code expires.</p>
@@ -219,6 +205,7 @@ app.post('/verify-payment', async (req, res) => {
 // ================= 5. GET MY TICKETS =================
 app.get('/my-transactions/:phone', (req, res) => {
     try {
+        console.log("Fetching tickets for phone:", req.params.phone);
         const phone = decodeURIComponent(req.params.phone);
         const userTickets = ticketsDB.filter(t => t.customer_phone === phone);
         return res.json({ success: true, tickets: userTickets });
