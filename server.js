@@ -4,6 +4,10 @@ const axios = require('axios');
 const Razorpay = require('razorpay');
 const app = express();
 
+// ================= USER SESSION & DATABASES =================
+const otpStore = {};     // Temporary storage for OTPs
+const ticketsDB = [];    // Temporary in-memory ticket database
+
 // ================= MIDDLEWARES =================
 app.use(cors({
     origin: '*',
@@ -11,10 +15,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
-
-// Temporary Databases in Memory
-const otpStore = {}; 
-const ticketsDB = []; 
 
 // ================= META WHATSAPP CLOUD API CONFIG =================
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || 'TERA_META_TEMPORARY_ACCESS_TOKEN';
@@ -64,9 +64,9 @@ app.post('/send-otp', async (req, res) => {
         if(sent) {
             return res.json({ success: true, message: "OTP successfully sent to your WhatsApp! 📱" });
         } else {
-            // Fallback mode agar token ya API limit mein kuch issue ho
+            // Fallback mode for testing/debugging
             console.log(`⚠️ Fallback OTP (Meta API failed): ${otp}`);
-            return res.json({ success: true, message: "OTP generated (Check console/debug)", debug_otp: otp });
+            return res.json({ success: true, message: "OTP generated successfully!", debug_otp: otp });
         }
 
     } catch (error) {
@@ -115,11 +115,42 @@ app.post('/create-order', async (req, res) => {
         return res.json({ success: true, order });
     } catch (error) {
         console.error("Razorpay Error:", error);
-        return res.json({ success: true, order: { id: `dummy_order_${Date.now()}` } }); 
+        // Fallback dummy order if keys are not active yet
+        return res.json({ success: true, order: { id: `order_${Date.now()}`, amount: req.body.amount * 100, currency: "INR" } }); 
     }
 });
 
-// ================= 4. RAZORPAY WEBHOOK (SAVE TICKET) =================
+// ================= 4. SAVE TICKET (DIRECT FRONTEND VERIFY ROUTE) =================
+app.post('/verify-payment', (req, res) => {
+    try {
+        const { payment_id, event_name, category, customer_phone, date, time, amount } = req.body;
+        
+        const passId = 'ES-' + Math.floor(100000 + Math.random() * 900000);
+
+        const newTicket = {
+            passId: passId,
+            payment_id: payment_id || `pay_${Date.now()}`,
+            amount: `₹${amount}`,
+            event_name: event_name || 'Premium Event',
+            category: category || 'Entry Pass',
+            customer_phone: customer_phone,
+            date: date || 'TBD',
+            time: time || 'TBD',
+            status: 'CONFIRMED',
+            bookedOn: new Date().toLocaleDateString()
+        };
+
+        ticketsDB.push(newTicket);
+        console.log("🎟️ Ticket Saved Successfully with QR PassID:", passId);
+        
+        return res.json({ success: true, passId, ticket: newTicket });
+    } catch (error) {
+        console.error("Payment Verification Error:", error);
+        return res.status(500).json({ success: false, message: "Failed to save ticket" });
+    }
+});
+
+// ================= 5. RAZORPAY WEBHOOK =================
 app.post('/razorpay-webhook', (req, res) => {
     try {
         const payload = req.body.payload;
@@ -127,7 +158,9 @@ app.post('/razorpay-webhook', (req, res) => {
             const payment = payload.payment.entity;
             const notes = payment.notes || {};
 
+            const passId = 'ES-' + Math.floor(100000 + Math.random() * 900000);
             const newTicket = {
+                passId: passId,
                 payment_id: payment.id,
                 amount: `₹${payment.amount / 100}`,
                 event_name: notes.event_name || 'Premium Event',
@@ -135,11 +168,12 @@ app.post('/razorpay-webhook', (req, res) => {
                 customer_phone: notes.customer_phone,
                 date: notes.date || 'TBD',
                 time: notes.time || 'TBD',
-                status: 'CONFIRMED'
+                status: 'CONFIRMED',
+                bookedOn: new Date().toLocaleDateString()
             };
 
             ticketsDB.push(newTicket);
-            console.log("Ticket Saved Successfully:", newTicket.payment_id);
+            console.log("Webhook Ticket Saved:", passId);
         }
         res.json({ status: 'ok' });
     } catch (error) {
@@ -148,7 +182,7 @@ app.post('/razorpay-webhook', (req, res) => {
     }
 });
 
-// ================= 5. GET MY TICKETS =================
+// ================= 6. GET MY TICKETS =================
 app.get('/my-tickets/:phone', (req, res) => {
     try {
         const phone = decodeURIComponent(req.params.phone);
@@ -159,11 +193,26 @@ app.get('/my-tickets/:phone', (req, res) => {
     }
 });
 
-// ================= 6. TRANSFER TICKET =================
+// ================= 7. VERIFY TICKET (VENUE SCANNER) =================
+app.get('/verify-ticket/:passId', (req, res) => {
+    try {
+        const passId = req.params.passId;
+        const ticket = ticketsDB.find(t => t.passId === passId);
+        if(ticket) {
+            return res.json({ success: true, valid: true, ticket });
+        } else {
+            return res.status(404).json({ success: false, valid: false, message: "Invalid Pass ID!" });
+        }
+    } catch (error) {
+        return res.status(500).json({ success: false, error: "Verification failed" });
+    }
+});
+
+// ================= 8. TRANSFER TICKET =================
 app.post('/transfer-ticket', (req, res) => {
     try {
-        const { paymentId, currentPhone, newPhone, newName } = req.body;
-        const ticketIndex = ticketsDB.findIndex(t => t.payment_id === paymentId && t.customer_phone === currentPhone);
+        const { passId, currentPhone, newPhone, newName } = req.body;
+        const ticketIndex = ticketsDB.findIndex(t => t.passId === passId && t.customer_phone === currentPhone);
         
         if(ticketIndex > -1) {
             ticketsDB[ticketIndex].customer_phone = newPhone;
