@@ -46,7 +46,7 @@ async function connectToWhatsApp() {
                 console.log('connection closed, reconnecting...', shouldReconnect);
                 connectionStatus = 'DISCONNECTED';
                 if (shouldReconnect) {
-                    connectToWhatsApp();
+                    setTimeout(connectToWhatsApp, 3000);
                 }
             } else if (connection === 'open') {
                 connectionStatus = 'CONNECTED';
@@ -59,8 +59,6 @@ async function connectToWhatsApp() {
         console.error("WhatsApp Connection Error:", err);
     }
 }
-
-connectToWhatsApp();
 
 // ================= BROWSER QR ENDPOINT =================
 app.get('/qr', async (req, res) => {
@@ -219,8 +217,10 @@ app.get('/my-transactions/:phone', (req, res) => {
     }
 });
 
-// ================= SERVER START =================
+// ================= SERVER START & WHATSAPP INIT =================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(`EventSphere Baileys Engine Port ${PORT} par daud raha hai! 🚀`);
+    console.log(`EventSphere Master Engine Port ${PORT} par daud raha hai! 🚀`);
+    // Start WhatsApp connection AFTER server binds to port to prevent timeout
+    setTimeout(connectToWhatsApp, 1000);
 });
