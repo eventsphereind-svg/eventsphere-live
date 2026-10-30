@@ -60,7 +60,11 @@ async function connectToWhatsApp() {
     }
 }
 
-// ================= BROWSER QR ENDPOINT =================
+// ================= ROOT & BROWSER QR ENDPOINTS =================
+app.get('/', (req, res) => {
+    res.send('<h2>🚀 EventSphere Backend is Online! Go to <a href="/qr">/qr</a> to connect WhatsApp.</h2>');
+});
+
 app.get('/qr', async (req, res) => {
     if (connectionStatus === 'CONNECTED') {
         return res.send('<h2 style="color:green; text-align:center; margin-top:50px;">✅ WhatsApp is already Connected and Running!</h2>');
